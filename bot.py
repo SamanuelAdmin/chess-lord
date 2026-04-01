@@ -2,8 +2,8 @@ import os
 import sys
 import logging
 import asyncio
-from io import BytesIO
 import random
+from io import BytesIO
 
 import requests
 from telegram import Bot
@@ -18,6 +18,22 @@ logger = logging.getLogger(__name__)
 
 headers = {"User-Agent": "chess-lord/1.0"}
 CAT_SUBREDDITS = ["cats", "blackcats", "OneOrangeBraincell", "danglers", "Catswithjobs", "airplaneears", "IllegallySmolCats", "catsareliquid", "Blep"]
+MIN_WAIT_TIME = 5 # hours
+MAX_WAIT_TIME = 8 # hours
+
+current_subreddit_index = 0
+
+# Returns the next element of the CAT_SUBREDDITS array.
+# Loops back if the end is reached
+def next_subreddit():
+    global current_subreddit_index
+
+    subreddit = CAT_SUBREDDITS[current_subreddit_index]
+
+    current_subreddit_index = (current_subreddit_index + 1) % len(CAT_SUBREDDITS)
+    return subreddit
+
+
 
 # Returns the top posts of a subreddit
 # time_filter: hour, day, week, month, year, all
@@ -40,7 +56,7 @@ def get_top_posts(subreddit, limit=10, time_filter="day"):
 
     except Exception as e:
         logger.error("Error getting top posts")
-        return []
+        return None
 
 
 
@@ -55,27 +71,44 @@ def get_image_data(post):
 
     logger.info(f"Retreiving image data from: {url}")
 
-    try:
-        if url.startswith("https://i.redd.it"):
-            img = requests.get(url, headers=headers)
-
-            logger.info("Returning image data from singular image")
-            return img.content
-
-        if post.get("is_gallery"):
-            first = next(iter(post["media_metadata"].values()))
-            img_url = first["s"]["u"].replace("&amp;", "&")
-            img = requests.get(img_url, headers=headers)
-
-            logger.info("Returning first image data from gallery")
-            return img.content
-
-        logger.warning(f"Bad post: {url}")
+    if not url.startswith("https://i.redd.it"):
+        logger.warning(f"Post contains non-image data: {url}")
         return None
+
+    try:
+        img = requests.get(url, headers=headers)
+
+        logger.info("Retrieved image data.")
+        return img.content
+
     except Exception as e:
         logger.error(e)
         logger.error(f"Could not retreive post: {url}")
         return None
+
+
+def get_next_image_data(attempts=5):
+
+    for i in range(1, attempts+1):
+        subreddit = next_subreddit()
+        top_posts = get_top_posts(subreddit)
+
+        if not top_posts:
+            logger.warning(f"No top posts found in r/{subreddit}. Trying next subreddit. (attempt {i})")
+            continue
+
+        logger.info(f"Found top posts in r/{subreddit}")
+
+        for post in top_posts:
+            image_data = get_image_data(post)
+            if image_data:
+                logger.info(f"Retrieved image data from r/{subreddit}")
+                return image_data
+
+        logger.warning(f"No image data found in any post from r/{subreddit}. (attempt {i})")
+
+    return None
+
 
 async def send_picture(bot, image_data, chat_id):
     await bot.send_photo(
@@ -86,27 +119,17 @@ async def send_picture(bot, image_data, chat_id):
 
 async def main_loop(bot, chat_id):
     while True:
-        sleep_time = random.randint(16 * 3600, 24 * 3600)
+        sleep_time = random.randint(MIN_WAIT_TIME * 3600, MAX_WAIT_TIME * 3600)
         logger.info(f"Next picture will be sent in {sleep_time} seconds.")
         await asyncio.sleep(sleep_time)
 
-        top_posts = get_top_posts(random.choice(CAT_SUBREDDITS))
-        if top_posts == []:
-            logger.error("No top posts found. Skipping message.")
+        image_data = get_next_image_data()
+
+        if not image_data:
+            logger.error("Could not get an image to send. Skipping message")
             continue
 
-        sent_picture = False
-        for post in top_posts:
-            image_data = get_image_data(post)
-            if image_data:
-                await send_picture(bot, image_data, chat_id)
-                sent_picture = True
-                break
-
-        if not sent_picture:
-            logger.error("No image was sent")
-
-
+        await send_picture(bot, image_data, chat_id)
 
 
 async def main():
