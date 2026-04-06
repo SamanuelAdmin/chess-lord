@@ -4,10 +4,29 @@ import logging
 import asyncio
 import random
 from io import BytesIO
+from dotenv import load_dotenv # https://pypi.org/project/python-dotenv/
+from typing import Optional
+from fake_useragent import UserAgent # https://pypi.org/project/fake-useragent/
 
 import requests
 from telegram import Bot
 from telegram.error import InvalidToken
+
+
+#!TODO: make full async
+#!TODO: add more annotations
+
+# local variables
+CAT_SUBREDDITS = ["cats", "blackcats", "OneOrangeBraincell", "danglers", "Catswithjobs", "airplaneears", "IllegallySmolCats", "catsareliquid", "Blep"]
+GET_REQUEST_ATTEMPLS = 5
+MIN_WAIT_TIME = 10 # seconds
+MAX_WAIT_TIME = 15 # seconds
+
+# global variables
+current_subreddit_index = 0
+# removed user agent from headers to avoid bans
+custom_headers = {}
+user_agent_manager = UserAgent()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,12 +35,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-headers = {"User-Agent": "chess-lord/1.0"}
-CAT_SUBREDDITS = ["cats", "blackcats", "OneOrangeBraincell", "danglers", "Catswithjobs", "airplaneears", "IllegallySmolCats", "catsareliquid", "Blep"]
-MIN_WAIT_TIME = 5 # hours
-MAX_WAIT_TIME = 8 # hours
+# exceptions, will be in asnother file
+class TokenNotFoundException(Exception):
+    def __str__(): return "No BOT_TOKEN found in env."
 
-current_subreddit_index = 0
+class ChatIdNotFoundException(Exception):
+    def __str__(): return "No CHAT_ID found in env."
+
+class InvalidTokenException(Exception):
+    def __str__(): return "Invalid token."
+        
 
 # Returns the next element of the CAT_SUBREDDITS array.
 # Loops back if the end is reached
@@ -34,61 +57,62 @@ def next_subreddit():
     return subreddit
 
 
-
 # Returns the top posts of a subreddit
 # time_filter: hour, day, week, month, year, all
-def get_top_posts(subreddit, limit=10, time_filter="day"):
+def get_top_posts(subreddit: str, limit: int=10, time_filter:str="day") -> Optional[dict]:
     logger.info(f"Getting top posts from r/{subreddit}")
-
     url = f"https://www.reddit.com/r/{subreddit}/top.json"
-    params = {
-        "limit": limit,
-        "t": time_filter
-    }
 
     try:
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(
+            url, 
+            headers={
+                "User-Agent": user_agent_manager.random, # generate user agent for every request randomly
+                **custom_headers # custom user headers
+            }, 
+            params={ # dont need another var for this
+                "limit": limit,
+                "t": time_filter
+            }
+        )
         response.raise_for_status()
         
-        data = response.json()
-        posts = data["data"]["children"]
+        posts = response.json()["data"]["children"]
         return posts
 
     except Exception as e:
-        logger.error("Error getting top posts")
-        return None
-
+        # added some context
+        logger.error(f"Error getting top posts from \n    url: {url}\n    Exception: {e}")
+        # do not return None here, useless
 
 
 # Takes a reddit post's url and provides the attached image.
-# returns None if no image is attached
-def get_image_data(post):
+def get_image_data(post) -> Optional[bytes]:
+    # returns None if no image is attached
+    
     try:
         url = post["data"]["url"]
     except Exception:
         logger.error("Post does not contain url")
         return None
 
-    logger.info(f"Retreiving image data from: {url}")
-
     if not url.startswith("https://i.redd.it"):
         logger.warning(f"Post contains non-image data: {url}")
         return None
 
     try:
-        img = requests.get(url, headers=headers)
-
-        logger.info("Retrieved image data.")
+        img = requests.get(url, headers={
+                "User-Agent": user_agent_manager.random, # generate user agent for every request randomly
+                **custom_headers # custom user headers
+            })
+        logger.info(f"Retrieved image data from: {url}.")
         return img.content
-
     except Exception as e:
-        logger.error(e)
-        logger.error(f"Could not retreive post: {url}")
-        return None
+        # do not use another log message for the same action
+        logger.error(f"Could not retreive post: {url}, exception: {e}")
 
 
 def get_next_image_data(attempts=5):
-
     for i in range(1, attempts+1):
         subreddit = next_subreddit()
         top_posts = get_top_posts(subreddit)
@@ -107,23 +131,22 @@ def get_next_image_data(attempts=5):
 
         logger.warning(f"No image data found in any post from r/{subreddit}. (attempt {i})")
 
-    return None
-
 
 async def send_picture(bot, image_data, chat_id):
     await bot.send_photo(
         chat_id=chat_id,
         photo=BytesIO(image_data),
     )
-    logger.info("Sent picture.")
+    logger.info(f"Sent picture to {chat_id}.")
+
 
 async def main_loop(bot, chat_id):
     while True:
-        sleep_time = random.randint(MIN_WAIT_TIME * 3600, MAX_WAIT_TIME * 3600)
+        sleep_time = random.randint(MIN_WAIT_TIME, MAX_WAIT_TIME) # removed magic values
         logger.info(f"Next picture will be sent in {sleep_time} seconds.")
         await asyncio.sleep(sleep_time)
 
-        image_data = get_next_image_data()
+        image_data = get_next_image_data() # attemps variable has not been used
 
         if not image_data:
             logger.error("Could not get an image to send. Skipping message")
@@ -133,28 +156,38 @@ async def main_loop(bot, chat_id):
 
 
 async def main():
+    # loading .env file, file must be in the same dir
+    # Example:
+    #    .
+    #    ├── .env
+    #    └── main.py
+
+    load_dotenv()
+    
     BOT_TOKEN = os.environ.get("BOT_TOKEN")
     CHAT_ID = os.environ.get("CHAT_ID")
 
     if BOT_TOKEN is None:
-        logger.critical("No BOT_TOKEN found in env. Exiting")
-        sys.exit(1)
+        # just raise custom exception
+        raise TokenNotFoundException()
 
     if CHAT_ID is None:
-        logger.critical("No CHAT_ID found in env. Exiting")
-        sys.exit(1)
+        raise ChatIdNotFoundException()
 
     try:
         bot = Bot(token=BOT_TOKEN)
         me = await bot.get_me() # Check token validity
         logger.info("Bot connected: @%s", me.username)
     except InvalidToken:
-        logger.critical("Invalid Token. Exiting")
-        sys.exit(1)
+        raise InvalidTokenException()
 
     await main_loop(bot, CHAT_ID)
 
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try: asyncio.run(main())
+    except KeyboardInterrupt: pass
+    except Exception as ex:
+        # do not skip any of critical exceptions
+        logger.critical(ex)
