@@ -99,6 +99,10 @@ def get_next_message():
     
 
 async def pingme(update, context):
+    if update.effective_user.username is None:
+        await update.message.set_reaction(ReactionTypeEmoji("👎"))
+        return
+
     state = load_state()
     username = "@" + update.effective_user.username   
     if not username in state["ping_users"]:
@@ -108,6 +112,10 @@ async def pingme(update, context):
     await update.message.set_reaction(ReactionTypeEmoji("❤️"))
 
 async def dontpingme(update, context):
+    if update.effective_user.username is None:
+        await update.message.set_reaction(ReactionTypeEmoji("👎"))
+        return
+
     state = load_state()
     username = "@" + update.effective_user.username   
     if username in state["ping_users"]:
