@@ -1,27 +1,18 @@
-import os
-import sys
 import logging
-import asyncio
 import random
+import asyncio
+import requests
 from io import BytesIO
 
-import requests
-from telegram import Bot
-from telegram.error import InvalidToken
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s: %(message)s"
-)
-logger = logging.getLogger(__name__)
-
+logger = logging.getLogger("mainlogger")
 
 headers = {"User-Agent": "chess-lord/1.0"}
+
+current_subreddit_index = 0
 CAT_SUBREDDITS = ["cats", "blackcats", "OneOrangeBraincell", "danglers", "Catswithjobs", "airplaneears", "IllegallySmolCats", "catsareliquid", "Blep"]
 MIN_WAIT_TIME = 5 # hours
 MAX_WAIT_TIME = 8 # hours
 
-current_subreddit_index = 0
 
 # Returns the next element of the CAT_SUBREDDITS array.
 # Loops back if the end is reached
@@ -32,7 +23,6 @@ def next_subreddit():
 
     current_subreddit_index = (current_subreddit_index + 1) % len(CAT_SUBREDDITS)
     return subreddit
-
 
 
 # Returns the top posts of a subreddit
@@ -57,8 +47,6 @@ def get_top_posts(subreddit, limit=10, time_filter="day"):
     except Exception as e:
         logger.error("Error getting top posts")
         return None
-
-
 
 # Takes a reddit post's url and provides the attached image.
 # returns None if no image is attached
@@ -118,6 +106,7 @@ async def send_picture(bot, image_data, chat_id):
     logger.info("Sent picture.")
 
 async def main_loop(bot, chat_id):
+    logger.info(__name__ + " loaded")
     while True:
         sleep_time = random.randint(MIN_WAIT_TIME * 3600, MAX_WAIT_TIME * 3600)
         logger.info(f"Next picture will be sent in {sleep_time} seconds.")
@@ -132,29 +121,3 @@ async def main_loop(bot, chat_id):
         await send_picture(bot, image_data, chat_id)
 
 
-async def main():
-    BOT_TOKEN = os.environ.get("BOT_TOKEN")
-    CHAT_ID = os.environ.get("CHAT_ID")
-
-    if BOT_TOKEN is None:
-        logger.critical("No BOT_TOKEN found in env. Exiting")
-        sys.exit(1)
-
-    if CHAT_ID is None:
-        logger.critical("No CHAT_ID found in env. Exiting")
-        sys.exit(1)
-
-    try:
-        bot = Bot(token=BOT_TOKEN)
-        me = await bot.get_me() # Check token validity
-        logger.info("Bot connected: @%s", me.username)
-    except InvalidToken:
-        logger.critical("Invalid Token. Exiting")
-        sys.exit(1)
-
-    await main_loop(bot, CHAT_ID)
-
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
