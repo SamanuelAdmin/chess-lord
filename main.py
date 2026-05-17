@@ -2,10 +2,9 @@ import os
 import sys
 import logging
 import asyncio
-from telegram import Bot
+from telegram.ext import Application, CommandHandler
 from telegram.error import InvalidToken
 from dotenv import load_dotenv
-
 from tasks import send_cats
 from tasks import send_leetcode
 
@@ -30,17 +29,26 @@ async def main():
         sys.exit(1)
 
     try:
-        bot = Bot(token=BOT_TOKEN)
+        app = Application.builder().token(BOT_TOKEN).build()
+        bot = app.bot
+
         me = await bot.get_me() # Check token validity
         logger.info("Bot connected: @%s", me.username)
     except InvalidToken:
         logger.critical("Invalid Token. Exiting")
         sys.exit(1)
 
-    await asyncio.gather(
-        send_cats.main_loop(bot, CHAT_ID),
-        send_leetcode.main_loop(bot, CHAT_ID) 
-    )
+    app.add_handler(CommandHandler("pingme", send_leetcode.pingme))
+    app.add_handler(CommandHandler("dontpingme", send_leetcode.dontpingme))
+
+    async with app:
+        await app.start()
+        await app.updater.start_polling()
+
+        await asyncio.gather(
+            send_cats.main_loop(bot, CHAT_ID),
+            send_leetcode.main_loop(bot, CHAT_ID) 
+        )
 
 
 

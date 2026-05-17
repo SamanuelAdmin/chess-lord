@@ -5,6 +5,7 @@ import json_utils
 import csv
 from datetime import datetime, date, time, timedelta
 from telegram import LinkPreviewOptions
+from telegram import ReactionTypeEmoji
 
 logger = logging.getLogger("mainlogger")
 
@@ -17,7 +18,17 @@ LEETCODE_FIELDS = []
 LEETCODE_ROWS = []
 LEN_LEETCODE_ROWS = 0
 
-PING_USERS = []
+def load_state() -> dict:
+    state = json_utils.load_json(json_filename)
+    if not state:
+        state = {
+            "day" : 0,
+            "ping_users" : [],
+            "completed_problems" : []
+        }
+    json_utils.save_json(json_filename, state)
+    return state
+
 
 def load_csv():
     global LEETCODE_FIELDS, LEETCODE_ROWS, LEN_LEETCODE_ROWS
@@ -71,34 +82,39 @@ def pick_random_excluding(n: int, exclude: list[int]) -> int:
     return random.choice(choices)
 
 
-# Returns the next available random line from leetcode.csv
-def get_next_line():
-    state = json_utils.load_json(json_filename)
-    if not state:
-        state = {
-            "day" : 0,
-            "completed_problems" : []
-        }
+def get_next_message():
+    state = load_state()
 
-    if state["day"] >= LEN_LEETCODE_ROWS:
+    if len(state["completed_problems"]) >= LEN_LEETCODE_ROWS:
         state["completed_problems"] = []
 
     line_number = pick_random_excluding(LEN_LEETCODE_ROWS, state["completed_problems"])
     state["day"] += 1
     state["completed_problems"].append(line_number)
     json_utils.save_json(json_filename, state)
-    return LEETCODE_ROWS[line_number], state["day"]
+    next_line = LEETCODE_ROWS[line_number]
     
+    # ID,Title,Difficulty,Link,Topics,Acceptance Rate (%),Premium Only,Category,Likes,Dislikes,Example Test Cases,Similar Questions
+    return construct_message(state["day"], next_line[1], next_line[3], next_line[2], state["ping_users"])
     
 
-# def construct_message(day_number, problem_name, url, difficulty, ping_users=[]) -> str:
-# ID,Title,Difficulty,Link,Topics,Acceptance Rate (%),Premium Only,Category,Likes,Dislikes,Example Test Cases,Similar Questions
-def get_next_message():
-    next_line, day = get_next_line()
+async def pingme(update, context):
+    state = load_state()
+    username = "@" + update.effective_user.username   
+    if not username in state["ping_users"]:
+        state["ping_users"].append(username)
 
-    return construct_message(day, next_line[1], next_line[3], next_line[2], PING_USERS)
+    json_utils.save_json(json_filename, state)
+    await update.message.set_reaction(ReactionTypeEmoji("❤️"))
 
+async def dontpingme(update, context):
+    state = load_state()
+    username = "@" + update.effective_user.username   
+    if username in state["ping_users"]:
+        state["ping_users"].remove(username)
 
+    json_utils.save_json(json_filename, state)
+    await update.message.set_reaction(ReactionTypeEmoji("💔"))
 
 async def main_loop(bot, chat_id):
     logger.info(__name__ + " loaded")
