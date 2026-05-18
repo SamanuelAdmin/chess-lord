@@ -2,26 +2,37 @@ import logging
 import random
 import asyncio
 import requests
+import json_utils
 from io import BytesIO
 
 logger = logging.getLogger("mainlogger")
 
 headers = {"User-Agent": "chess-lord/1.0"}
 
-current_subreddit_index = 0
+json_filename = "cats.json"
 CAT_SUBREDDITS = ["cats", "blackcats", "OneOrangeBraincell", "danglers", "Catswithjobs", "airplaneears", "IllegallySmolCats", "catsareliquid", "Blep"]
 MIN_WAIT_TIME = 5 # hours
 MAX_WAIT_TIME = 8 # hours
 
+def load_state() -> dict:
+    state = json_utils.load_json(json_filename)
+    if not state:
+        state = {
+            "last_index" : 0,
+        }
+    json_utils.save_json(json_filename, state)
+    return state
 
 # Returns the next element of the CAT_SUBREDDITS array.
 # Loops back if the end is reached
 def next_subreddit():
-    global current_subreddit_index
-
+    state = load_state()
+    current_subreddit_index = state["last_index"]
     subreddit = CAT_SUBREDDITS[current_subreddit_index]
 
     current_subreddit_index = (current_subreddit_index + 1) % len(CAT_SUBREDDITS)
+    state["last_index"] = current_subreddit_index
+    json_utils.save_json(json_filename, state)
     return subreddit
 
 
