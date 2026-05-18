@@ -12,7 +12,7 @@ logger = logging.getLogger("mainlogger")
 DAILY_PROBLEM_TIME = time(6, 30) # 6:30
 
 json_filename = "leetcode.json"
-leetcode_dataset_filename = "leetcode.csv"
+leetcode_dataset_filename = "leetcode_easier.csv"
 
 LEETCODE_FIELDS = []
 LEETCODE_ROWS = []
@@ -131,11 +131,16 @@ async def main_loop(bot, chat_id):
         sleep_time = get_sleep_time()
         await asyncio.sleep(sleep_time)
 
-        message = get_next_message()
-        await bot.send_message(
+        text_message = get_next_message()
+        message = await bot.send_message(
             chat_id=chat_id,
-            text=message,
+            text=text_message,
             link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+        await bot.pin_chat_message(
+            chat_id=chat_id,
+            message_id=message.message_id,
+            disable_notification=True,
         )
         logger.info(f"Sent leetcode problem:\n{message}")
 
