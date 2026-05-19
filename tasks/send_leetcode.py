@@ -132,15 +132,10 @@ async def main_loop(bot, chat_id):
         await asyncio.sleep(sleep_time)
 
         text_message = get_next_message()
-        message = await bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text=text_message,
             link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        await bot.pin_chat_message(
-            chat_id=chat_id,
-            message_id=message.message_id,
-            disable_notification=True,
         )
         logger.info(f"Sent leetcode problem:\n{message}")
 
