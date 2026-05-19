@@ -137,6 +137,6 @@ async def main_loop(bot, chat_id):
             text=text_message,
             link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
-        logger.info(f"Sent leetcode problem:\n{message}")
+        logger.info(f"Sent leetcode problem:\n{text_message}")
 
 
