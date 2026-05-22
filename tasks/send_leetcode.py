@@ -82,17 +82,24 @@ def pick_random_excluding(n: int, exclude: list[int]) -> int:
     return random.choice(choices)
 
 
-def get_next_message():
+def get_next_message(banwords: list = ["game", "drochka"]):
     state = load_state()
 
     if len(state["completed_problems"]) >= LEN_LEETCODE_ROWS:
         state["completed_problems"] = []
 
-    line_number = pick_random_excluding(LEN_LEETCODE_ROWS, state["completed_problems"])
-    state["day"] += 1
-    state["completed_problems"].append(line_number)
-    json_utils.save_json(json_filename, state)
-    next_line = LEETCODE_ROWS[line_number]
+    def gen_next_line() -> list:
+        line_number = pick_random_excluding(LEN_LEETCODE_ROWS, state["completed_problems"])
+        state["day"] += 1
+        state["completed_problems"].append(line_number)
+        json_utils.save_json(json_filename, state)
+        return LEETCODE_ROWS[line_number]
+    
+    while True:    
+        next_line = gen_next_line()
+        for banword in banwords:
+            if banword in next_line[3]: break
+        else: break 
     
     # ID,Title,Difficulty,Link,Topics,Acceptance Rate (%),Premium Only,Category,Likes,Dislikes,Example Test Cases,Similar Questions
     return construct_message(state["day"], next_line[1], next_line[3], next_line[2], state["ping_users"])
